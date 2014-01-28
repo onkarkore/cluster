@@ -1,13 +1,14 @@
-
 Create Clusters
 
 -----------------------------------------------------------------------------------------------------------
 
 1. What is this?
+
 	This project contains a library called "cluster.go" which is used to create n-number of servers 
 	and send message between them.
 
 2. Files present
+
 	(a) cluster.go 
 		This is a library which is used for
 		 - To create n-number of servers 
@@ -31,6 +32,7 @@ Create Clusters
 		     tcp://127.0.0.1:2002
 		
 3. How to run?
+
 	- go get github.com/onkarkore/cluster/
 	- go test github.com/onkarkore/cluster/
 	- set following variables in cluster_test.go 
@@ -39,6 +41,7 @@ Create Clusters
 
 
 4. References 
+
 	- http://golangtutorials.blogspot.in/2011/10/gotest-unit-testing-and-benchmarking-go.html
 	- http://stackoverflow.com/questions/10728863/how-to-lock-synchronize-access-to-a-variable-in-go-during-concurrent-goroutines
 	- go language tutorial
