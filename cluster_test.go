@@ -45,10 +45,6 @@ func Test_main(t *testing.T) {
 	/* If Broadcast set to -1 else set port number of receiver so that each server to to this server only */
 	env.RPid=-1
 	
-	if len(os.Args) < 1 {
-		fmt.Printf("<usage> : go run server.go \n")
-		return
-	}
 	
 	CreateSeverAndOutbox()    				
 }
