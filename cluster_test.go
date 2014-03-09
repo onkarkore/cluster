@@ -1,6 +1,6 @@
 /*
 	Author : Onkar Kore
-	This is a main main program to create multiple server and test cluster interface.
+	This is a main program to create multiple server and test cluster interface.
 */
 
 package cluster
@@ -11,6 +11,9 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"strconv"
+	"bufio"
+	"strings"
 )
 
 type Counter struct {
@@ -25,6 +28,7 @@ var (
 	EXPECTED_COUNT int
 	env  Envelope
 	views Counter
+	confFile = "cluster.conf"
 )
 
 
@@ -34,7 +38,7 @@ func Test_main(t *testing.T) {
 	receivemsgcount=0
 	
 	/* Number of message send by each server to other peers */	
-	MSG_TO_EACH_SERVER = 10
+	MSG_TO_EACH_SERVER = 1000
 
 	EXPECTED_COUNT = 0
 
@@ -53,7 +57,8 @@ func Test_main(t *testing.T) {
 
 func CreateSeverAndOutbox(){
 		
-	totakNumberofServers:=TotalNumberOfServers()
+	totakNumberofServers:=TotalNumberOfServers(confFile)
+
 
 	/* Expected count of message should be received */
 	if env.RPid == -1 {
@@ -62,14 +67,46 @@ func CreateSeverAndOutbox(){
 		EXPECTED_COUNT = (totakNumberofServers-1)*MSG_TO_EACH_SERVER
 	}
 
-	serv:=CreateServer()
 
-	for num:=0;num<totakNumberofServers;num++{
+	var serverport[] int
+
+	/* Read config file for number of servers. */
+	configfile, _ := os.OpenFile(confFile, os.O_RDWR, 0600)
+	i:=0
+	var e error
+	buf := bufio.NewReader(configfile)
+	if e != nil {
+		
+	} else {
+		for {
+			line, err := buf.ReadString('\n')
+			if err != nil {
+				break
+			}
+			line = line[:len(line)-1]
+			parts := strings.Split(line, ":")
+			value,_ := strconv.Atoi(parts[2])
+			serverport=append(serverport,value)
+			i = i+1
+		}
+	}
+	configfile.Close()
+
+
+
+	num:=0
+	for i:=1;i<=totakNumberofServers;i++{
+
+		s := "cluster"+strconv.Itoa(serverport[i-1])+".conf"
+		serv:=CreateServer(s)
+	
 		go  SendMsgtoServers(serv[num].Outbox(),serv[num])	
 		go  ReceiveMsg(serv[num].Inbox(),serv[num])		
-		go inboxmsg(serv[num])
-		go outboxmsg(serv[num])
+		go  inboxmsg(serv[num])
+		go  outboxmsg(serv[num])
+				
 	}
+
 
 	for
 	{

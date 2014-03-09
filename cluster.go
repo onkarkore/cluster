@@ -16,10 +16,13 @@ import (
 	"bufio"
 	"io"
 	"strings"	
+	"encoding/gob"
+	"bytes"
 )
 
 var (
-	hostaddress []string 
+	hostaddress []string
+	configFile string
 )
 
 
@@ -58,7 +61,9 @@ type ServerData struct {
 	PeersId [] int
 	PeersAdd [] string
 	Outboxd chan *Envelope	
-	Inboxd chan *Envelope	
+	Inboxd chan *Envelope
+	ClientSocket [] *zmq.Socket
+	servermapping map[int]int
 }
 
 
@@ -83,32 +88,45 @@ func PeersAddress() []string {
 }
 
 /* Returns Peers of this server */
-func (e ServerData) Peers() []int {
+func (ser ServerData) Peers() []int {
 	var av = []int{}
-	
-	f, err := os.OpenFile("cluster.conf", os.O_CREATE|os.O_RDONLY,0600)
+
+		
+
+	f, err := os.OpenFile(configFile, os.O_CREATE|os.O_RDONLY,0600)
         if err != nil {
 		
     	    log.Fatal(err)
     	}
     	bf := bufio.NewReader(f)
+	count:=0
     	for {
         	switch line, err := bf.ReadString('\n'); err {
         	case nil:
 			line = line[:len(line)-1]
+
+			if !strings.Contains(line,"tcp") {
+				continue
+			}
+
 			parts := strings.Split(line, ":")
 			value,_:=strconv.Atoi(parts[2])
 			av = append(av,value)
 			hostaddress = append(hostaddress,parts[0]+":"+parts[1])
+			//ser.servermapping[value] = count
+			//fmt.Println(ser.servermapping[value],count)
+			count++
         	case io.EOF:
         	    if line > "" {
         	        fmt.Println(line)
         	    }
+		    f.Close()
         	    return av
 	        default:
 	            log.Fatal(err)
         	}
     	}
+	f.Close()
 	return av
 }
 
@@ -128,28 +146,74 @@ func (s ServerData) Inbox() chan *Envelope {
 /* Returns new socket of this server */
 func CreateSocket() *zmq.Socket{
 	var server *zmq.Socket
-	server, _ = zmq.NewSocket(zmq.REP)
+	server, _ = zmq.NewSocket(zmq.PULL)
 	return server
 }
 
+
+/* Returns new socket of this server */
+func CreateClientSocket() *zmq.Socket{
+	client,_ := zmq.NewSocket(zmq.PUSH)
+	return client
+}
+
+
+func TotalNumberOfServers(cfile string) int {
+	
+	configFile = cfile
+	var s  ServerData
+	var Peers = s.Peers()
+	return len(Peers)
+}
+
+/* Create n number of server objects and initialize its properties */
+func CreateServer(cfile string) [] ServerData{
+
+	configFile = cfile	
+	
+	var serv [] ServerData
+	var s  ServerData
+	var Peers = s.Peers()
+	var hostaddr =  PeersAddress()	
+
+	//for num:=0;num<len(Peers);num++{		
+	for num:=0;num<1;num++{		
+		s.ServerID = Peers[num]
+		s.ServerAdd = hostaddr[num]+":"+strconv.Itoa(Peers[num])
+		s.PeersId = Peers
+
+		s.ServerSocket =  CreateSocket()
+		s.ServerSocket.Bind(s.ServerAdd)
+
+		s.Outboxd = make(chan * Envelope)	
+		s.Inboxd = make(chan * Envelope)
+
+		s.servermapping = make(map[int]int)
+
+		for i:=0;i<len(Peers);i++{
+			tmp:=CreateClientSocket()
+			tmp.Connect(hostaddr[num]+":"+strconv.Itoa(Peers[i]))
+			s.ClientSocket = append(s.ClientSocket,tmp)
+			s.servermapping[Peers[i]]=i
+		}
+		serv = append(serv,s)
+		fmt.Println("I: echo service is ready at ", s.ServerAdd)	
+	}
+	return serv
+}
 
 /* Receive messages from other server and send back to sender */
 func ReceiveMsg(inbox chan *Envelope,server2 ServerData){
 	
 	for  {			
-		receivemsg, err := server2.ServerSocket.RecvMessage(0)
+		receivemsg, err := server2.ServerSocket.RecvBytes(0)
+
+		var r Envelope
 		
-		line := receivemsg[0]
-		line = line[1:len(line)-1]
-		str := strings.Split(line," ")
-		id,_ := strconv.Atoi(str[0])
-		mid,_:=	strconv.Atoi(str[1])
-		msg := ""
-		for count:=2;count<len(str);count++{
-			msg=msg+str[count]+" "
-		}			
-		
-		r := Envelope{id,int64(mid),msg}
+		r1:=bytes.NewBuffer(receivemsg)
+		decoder:=gob.NewDecoder(r1)
+		decoder.Decode(&r)
+
 		go addinbox(server2,r)
 		if err != nil {
 			time.Sleep(10*time.Second)
@@ -191,25 +255,22 @@ func SendMsgtoServers(outbox chan *Envelope,server1 ServerData){
 							e1.RPid = peers[peers_count]
 							e1.MsgId= int64(peers[peers_count]  * 10 + 1)
 							e1.Msg  = "Message form server ["+strconv.Itoa(server1.ServerID)+"] to server ["+strconv.Itoa(peers[peers_count])+"]"
-							//serveraddress:="tcp://127.0.0.1:"+strconv.Itoa(peers[peers_count])
-							serveraddress:=hostaddress[peers_count]+":"+strconv.Itoa(peers[peers_count])
-							
-							//time.Sleep(3*time.Second)
-							client, _ := zmq.NewSocket(zmq.REQ)
-							client.Connect(serveraddress)
-							client.SendMessage(e1)
-							
-							//fmt.Println("Message send ---> ", e1.Msg)		
+
+					
+							w:=new(bytes.Buffer)
+							encoder:=gob.NewEncoder(w)
+							encoder.Encode(e1)
+
+							server1.ClientSocket[peers_count].SendBytes(w.Bytes(),0)	
 						}
 		
 					} else {
 						if e.RPid==server1.ServerID{
 						} else {
-							serveraddress:="tcp://127.0.0.1:"+strconv.Itoa(e.RPid)
-							client, _ := zmq.NewSocket(zmq.REQ)
-							client.Connect(serveraddress)
-							client.SendMessage(*cakeName)		
-							//fmt.Println("Message send ---> ", *cakeName)
+							w:=new(bytes.Buffer)
+							encoder:=gob.NewEncoder(w)
+							encoder.Encode(e)
+							server1.ClientSocket[server1.servermapping[e.RPid]].SendBytes(w.Bytes(),0)
 						}
 				}				        	            	    	
 			}   
