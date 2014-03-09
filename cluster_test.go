@@ -38,7 +38,7 @@ func Test_main(t *testing.T) {
 	receivemsgcount=0
 	
 	/* Number of message send by each server to other peers */	
-	MSG_TO_EACH_SERVER = 1000
+	MSG_TO_EACH_SERVER = 10
 
 	EXPECTED_COUNT = 0
 
